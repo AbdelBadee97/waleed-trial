@@ -1,0 +1,57 @@
+# streamlit_app.py
+
+import streamlit as st
+import pandas as pd
+
+st.set_page_config(page_title="WHO AQ Metadata Explorer", layout="wide")
+st.title("🔍 WHO Air‑Quality Database Metadata Viewer")
+
+@st.cache_data
+def load_metadata(path_or_buffer):
+    # Find the row where the real header starts
+    header_row = None
+    if hasattr(path_or_buffer, "read"):
+        # file‐like (uploaded)
+        lines = path_or_buffer.getvalue().decode("latin1").splitlines()
+    else:
+        # path on disk
+        with open(path_or_buffer, encoding="latin1") as f:
+            lines = f.read().splitlines()
+    for idx, ln in enumerate(lines):
+        if ln.startswith("Column name"):
+            header_row = idx
+            break
+    # now read from that header row
+    df = pd.read_csv(
+        path_or_buffer,
+        skiprows=header_row,
+        encoding="latin1",
+        usecols=[0,1],
+        names=["Column name","Description"],
+        header=0,
+        dtype=str,
+    )
+    return df.dropna(how="all")
+
+# — Sidebar: upload or path —
+st.sidebar.header("Load Metadata CSV")
+upload = st.sidebar.file_uploader("Upload metadata CSV", type="csv")
+path   = st.sidebar.text_input("—or enter local path", "")
+
+if upload:
+    df_meta = load_metadata(upload)
+elif path:
+    df_meta = load_metadata(path)
+else:
+    st.info("Please upload your CSV or paste its local path.")
+    st.stop()
+
+# — Search/filter —
+query = st.text_input("🔎 Search for text in column name or description")
+if query:
+    mask = df_meta.apply(lambda row: row.str.contains(query, case=False, na=False)).any(axis=1)
+    df_meta = df_meta[mask]
+
+# — Show results —
+st.write(f"Showing **{len(df_meta):,}** metadata entries")
+st.dataframe(df_meta, use_container_width=True)
